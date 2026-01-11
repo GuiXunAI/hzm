@@ -1,7 +1,6 @@
 export async function onRequestGet(context: any) {
   const { env, request } = context;
   
-  // 定义统一的 JSON 响应函数，防止 HTML 污染
   const makeResponse = (data: any, status = 200) => {
     return new Response(JSON.stringify(data), {
       status,
@@ -16,24 +15,54 @@ export async function onRequestGet(context: any) {
   try {
     const url = new URL(request.url);
     const targetUserId = url.searchParams.get('user_id');
-    const now = Date.now();
-    const ALERT_THRESHOLD = 2 * 60 * 1000; 
-
-    // 检查环境变量
+    const testTo = url.searchParams.get('test_to'); 
+    
+    // 获取当前环境中的所有 Key，用于排查变量是否注入成功
+    const detectedEnvKeys = Object.keys(env);
+    
     const RESEND_API_KEY = env.RESEND_API_KEY;
+    const SENDER_EMAIL = env.RESEND_FROM_EMAIL || "Live Well <onboarding@resend.dev>";
+    const isCustomDomain = !!env.RESEND_FROM_EMAIL;
+
     if (!RESEND_API_KEY) {
-      return makeResponse({ status: "error", message: "未在 Cloudflare 中配置 RESEND_API_KEY 环境变量" }, 500);
+      return makeResponse({ 
+        status: "error", 
+        message: "未配置 RESEND_API_KEY", 
+        detected_keys: detectedEnvKeys 
+      }, 500);
     }
 
-    // 检查数据库绑定
-    if (!env.DB) {
-      return makeResponse({ status: "error", message: "Cloudflare D1 数据库绑定 'DB' 未找到，请检查控制台设置" }, 500);
+    // 域名发信自由度测试模式
+    if (testTo) {
+      const resendResponse = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${RESEND_API_KEY}`,
+        },
+        body: JSON.stringify({
+          from: SENDER_EMAIL,
+          to: [testTo],
+          subject: "【活着么】域名发信验证成功",
+          text: `恭喜！域名发信配置已完全生效。\n\n当前发件人: ${SENDER_EMAIL}\n识别状态: ${isCustomDomain ? '✅ 已识别环境变量' : '⚠️ 未识别变量(使用默认)'}\n检测到的环境参数: ${detectedEnvKeys.join(', ')}`,
+        }),
+      });
+      const resendData: any = await resendResponse.json();
+      return makeResponse({ 
+        status: resendResponse.ok ? "success" : "failed", 
+        mode: "DirectTest", 
+        is_custom_domain: isCustomDomain,
+        sender_used: SENDER_EMAIL,
+        detected_keys: detectedEnvKeys,
+        result: resendData 
+      });
     }
+
+    // 正常的预警逻辑
+    if (!env.DB) return makeResponse({ status: "error", message: "数据库未绑定" }, 500);
 
     let usersToAlert = [];
-
     if (targetUserId) {
-      // 模式 A: 针对特定用户核对数据
       const query = await env.DB.prepare(`
         SELECT u.id as user_id, u.name as user_name, u.language, c.email as contact_email, u.last_check_in
         FROM users u
@@ -42,7 +71,8 @@ export async function onRequestGet(context: any) {
       `).bind(targetUserId).all();
       usersToAlert = query.results || [];
     } else {
-      // 模式 B: 自动巡检全库
+      const now = Date.now();
+      const ALERT_THRESHOLD = 2 * 60 * 1000; 
       const query = await env.DB.prepare(`
         SELECT u.id as user_id, u.name as user_name, u.last_check_in, u.language, c.email as contact_email
         FROM users u
@@ -53,35 +83,12 @@ export async function onRequestGet(context: any) {
       usersToAlert = query.results || [];
     }
 
-    if (usersToAlert.length === 0) {
-      return makeResponse({ 
-        status: "success", 
-        message: targetUserId ? "未在云端数据库找到该 ID 的记录，请检查同步是否成功。" : "目前没有失联用户", 
-        report: [] 
-      });
-    }
-
     const report = [];
-
     for (const user of usersToAlert) {
-      if (!user.contact_email) {
-        report.push({ 
-          user_id: user.user_id, 
-          user_name: user.user_name,
-          success: false, 
-          message: "该用户在云端存在，但关联的联系人邮箱为空。原因可能是 ID 冲突导致联系人表写入失败。" 
-        });
-        continue;
-      }
-
+      if (!user.contact_email) continue;
       const isEn = user.language === 'en';
-      const subject = isEn ? `[Safety Alert Test] ${user.user_name}` : `【安全预警测试】请确认${user.user_name}的状态`;
-      const textBody = `您好，这是来自“活着么”App的预警系统测试。
-用户姓名：${user.user_name}
-用户 ID：${user.user_id}
-当前云端邮箱：${user.contact_email}
-
-如果您收到此邮件，说明云端预警触发流程已通。`;
+      const subject = isEn ? `[Safety Alert] ${user.user_name}` : `【安全预警】请确认${user.user_name}的状态`;
+      const textBody = `您好，这是来自“活着么”App的自动预警。\n用户：${user.user_name}\n状态：已超过预定时间未签到。\n请尽快核实其安全。`;
 
       try {
         const resendResponse = await fetch("https://api.resend.com/emails", {
@@ -91,42 +98,28 @@ export async function onRequestGet(context: any) {
             "Authorization": `Bearer ${RESEND_API_KEY}`,
           },
           body: JSON.stringify({
-            from: "Live Well <onboarding@resend.dev>",
+            from: SENDER_EMAIL,
             to: [user.contact_email],
             subject: subject,
             text: textBody,
           }),
         });
-
         const resendData: any = await resendResponse.json();
         report.push({
-          user_id: user.user_id,
           user_name: user.user_name,
-          cloud_email: user.contact_email,
           success: resendResponse.ok,
+          sender_used: SENDER_EMAIL,
+          is_custom_domain: isCustomDomain,
           debug: resendData
         });
-      } catch (sendErr: any) {
-        report.push({
-          user_id: user.user_id,
-          success: false,
-          message: "发送邮件请求发生网络错误: " + sendErr.message
-        });
+      } catch (err: any) {
+        report.push({ user_name: user.user_name, success: false, error: err.message });
       }
     }
 
-    return makeResponse({ 
-      status: "success", 
-      mode: targetUserId ? "Targeted" : "Scan",
-      report 
-    });
+    return makeResponse({ status: "success", report, detected_keys: detectedEnvKeys });
 
   } catch (err: any) {
-    // 捕获所有代码运行异常，确保返回 JSON
-    return makeResponse({ 
-      status: "error", 
-      message: "API 脚本运行异常: " + err.message,
-      stack: err.stack
-    }, 500);
+    return makeResponse({ status: "error", message: err.message }, 500);
   }
 }
