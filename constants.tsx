@@ -1,0 +1,127 @@
+
+import { TranslationStrings, Language } from './types';
+
+export const HEALING_QUOTES: Record<Language, string[]> = {
+  zh: [
+    "生活明朗 万物可爱",
+    "今天的你 也很棒哦",
+    "世界在爱着你",
+    "平安是最好的礼物",
+    "心怀暖阳 无惧严寒",
+    "每一个日子都发光",
+    "万物可爱 人间值得",
+    "春暖花开 平安喜乐",
+    "生活很长 慢慢欣赏",
+    "做个平安的普通人"
+  ],
+  en: [
+    "Life is bright and lovely",
+    "You are doing great today",
+    "The world loves you",
+    "Safety is the best gift",
+    "Heart full of sunshine",
+    "Every day shines",
+    "Life is worth it",
+    "Peace and joy to you",
+    "Enjoy the journey",
+    "Be safe, be you"
+  ]
+};
+
+export const POLICIES = {
+  zh: {
+    userAgreement: "《用户协议》\n1. 本应用旨在为独居人士提供日常平安确认服务。\n2. 用户需每日主动签到，若超过48小时未签到，系统将尝试联系您的预留守护者。\n3. 我们不保证100%的提醒成功率，请勿完全依赖本工具作为唯一安全保障。\n4. 您同意并授权本应用在必要时向守护者发送包含您状态的通知。",
+    privacyPolicy: "《隐私政策》\n1. 您的个人姓名、电话、邮箱等信息仅加密存储于本地及必要的云端数据库。\n2. 我们不会向第三方出售或泄露您的隐私数据。\n3. 我们收集的签到数据仅用于应用内的统计分析展示。\n4. 您可以随时在设置中修改或更新您的个人信息。"
+  },
+  en: {
+    userAgreement: "User Agreement\n1. This app is designed for solo dwellers to confirm daily safety.\n2. Users must check in daily. If missed for 48h, we notify guardians.\n3. We do not guarantee 100% success; please do not rely solely on this tool.\n4. You authorize the app to notify guardians about your status when necessary.",
+    privacyPolicy: "Privacy Policy\n1. Your name, phone, and email are stored locally and in encrypted cloud DBs.\n2. We never sell or leak your private data to third parties.\n3. Check-in data is only used for in-app statistical displays.\n4. You can modify or update your personal info in settings at any time."
+  }
+};
+
+export const TRANSLATIONS: Record<Language, TranslationStrings> = {
+  zh: {
+    title: "活着么",
+    subtitle: "温暖守护你的每一天",
+    checkInBtn: "确认平安",
+    checkedInToday: "今日已安",
+    emergencyTitle: "紧急联系人",
+    emergencyDesc: "失联后将发送预警邮件",
+    userTitle: "我的信息",
+    userDesc: "基础联络资料",
+    settings: "设置",
+    history: "统计",
+    name: "姓名",
+    email: "邮箱",
+    phone: "电话",
+    save: "保存信息",
+    warningTitle: "守护预警",
+    warningDesc: "若连续两日以上未签到，系统会向您填写的紧急联系人邮箱发送预警邮件。",
+    viewSample: "查看邮件示例",
+    emailTemplate: "邮件主题：【安全预警】请立即确认{用户名}的安全状态\n\n尊敬的紧急联系人：\n\n您好！\n\n您收到这封邮件，是因为您的紧急关联人 {用户名}（活着么App关联姓名）已连续 {未签到天数} 天 未在【活着么】App完成每日平安签到。\n\n为保障{用户名}的人身安全，恳请您尽快通过以下方式尝试联系TA：\n\n1. 优先拨打{用户名}的常用电话（若您留存相关信息）；\n\n2. 联系{用户名}的同住亲友、邻居或同事协助核实；\n\n3. 若多次联系无果，且您判断存在安全风险，建议及时联系当地社区居委会、物业或报警处理。\n\n重要说明：\n\n1. 此邮件为系统自动触发，仅作为安全提醒，不代表{用户名}已发生实际危险，也可能是TA忘记签到；\n\n2. 若您已确认{用户名}安全，可提醒TA尽快登录App完成签到，避免后续重复预警；\n\n3. 如需调整紧急联系人信息或预警规则，可由{用户名}登录【活着么】进行设置。\n\n感谢您的配合，愿每一位独居者都能平安顺遂。\n\n——【活着么】官方团队\n\n（此邮件为系统自动发送，无需回复）",
+    quoteTitle: "生命寄语",
+    statsTitle: "签到统计",
+    daysMissing: "漏签天数",
+    lifeValue: "珍惜生命 · 热爱当下",
+    selectLang: "语言切换",
+    streakText: "连续签到",
+    consecutiveDays: "天",
+    statusSafe: "平安",
+    statusPending: "待确认",
+    policyTitle: "守护策略",
+    guardianLabel: "预警规则",
+    addGuardian: "添加联系人",
+    alertStatus: "邮件预警已就绪",
+    protocolNote: "连续两日未签到将发送预警",
+    statusRunning: "系统运行中",
+    statusCheck: "平安状态",
+    getStarted: "开启守护",
+    setupProfile: "初始化资料",
+    setupDesc: "请填写信息以确保预警有效",
+    calendarTitle: "守护日志",
+    activityLevel: "活跃度",
+    timeTrend: "签到时间统计",
+  },
+  en: {
+    title: "Live Well",
+    subtitle: "Guarding your every day",
+    checkInBtn: "I'm Safe",
+    checkedInToday: "All Safe",
+    emergencyTitle: "Emergency Contacts",
+    emergencyDesc: "Alerts sent after silence",
+    userTitle: "My Info",
+    userDesc: "Basic Profile",
+    settings: "Settings",
+    history: "Stats",
+    name: "Name",
+    email: "Email",
+    phone: "Phone",
+    save: "Save Info",
+    warningTitle: "Safety Alert",
+    warningDesc: "Alerts sent after 48h silence.",
+    viewSample: "View Sample",
+    emailTemplate: "Subject: [Safety Alert] Please verify the safety of {User Name} immediately\n\nDear Emergency Contact,\n\n{User Name} has missed daily safety check-ins for {Days Missed} consecutive days.\n\nPlease contact them immediately.\n\n— The Live Well Team",
+    quoteTitle: "Quote",
+    statsTitle: "Analytics",
+    daysMissing: "Missed",
+    lifeValue: "Cherish Every Moment",
+    selectLang: "Language",
+    streakText: "Streak",
+    consecutiveDays: "Days",
+    statusSafe: "Safe",
+    statusPending: "Pending",
+    policyTitle: "Protocol",
+    guardianLabel: "Protocol",
+    addGuardian: "Add New",
+    alertStatus: "Active",
+    protocolNote: "Alerts after 48h silence.",
+    statusRunning: "Online",
+    statusCheck: "Status",
+    getStarted: "Start",
+    setupProfile: "Setup",
+    setupDesc: "Enable alerts with info",
+    calendarTitle: "Guard Log",
+    activityLevel: "Activity",
+    timeTrend: "Sign-in Time Stats",
+  }
+};

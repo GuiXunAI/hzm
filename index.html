@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Live Well - 活着么</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+          --brand-emerald: #00D658;
+          --brand-emerald-soft: #EFFFF4;
+          --brand-slate: #1E293B;
+          --app-bg: #FFFFFF;
+          --system-red: #FF4D4F;
+          --system-red-soft: #FFF1F0;
+        }
+        
+        body { 
+          font-family: 'Inter', 'Noto Sans SC', sans-serif; 
+          background-color: var(--app-bg);
+          color: var(--brand-slate);
+          -webkit-tap-highlight-color: transparent;
+          letter-spacing: -0.01em;
+        }
+
+        .brand-logo-text {
+          font-family: 'Noto Sans SC', sans-serif;
+          font-weight: 900;
+          letter-spacing: -0.05em;
+          color: var(--brand-emerald);
+        }
+
+        .squishy:active { transform: scale(0.94); }
+        .squishy { transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+        .premium-card {
+          background: #FFFFFF;
+          border-radius: 32px;
+          border: 1.5px solid #F0F0F0;
+          box-shadow: 0 8px 30px rgba(0, 0, 0, 0.04);
+        }
+
+        .pill-input {
+          width: 100%;
+          padding: 18px 24px;
+          border-radius: 999px;
+          border: 1.5px solid var(--brand-emerald);
+          background: #FFFFFF;
+          text-align: center;
+          font-size: 16px;
+          font-weight: 500;
+          outline: none;
+          transition: all 0.3s ease;
+        }
+        .pill-input:focus {
+          box-shadow: 0 0 0 4px rgba(0, 214, 88, 0.1);
+        }
+
+        @keyframes breathe {
+          0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 77, 79, 0.2); }
+          50% { transform: scale(1.05); box-shadow: 0 0 40px rgba(255, 77, 79, 0.4); }
+        }
+        .animate-breathe {
+          animation: breathe 2s infinite ease-in-out;
+        }
+
+        .firework-particle {
+          position: absolute;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          pointer-events: none;
+          z-index: 100;
+        }
+
+        ::-webkit-scrollbar { display: none; }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+    "recharts": "https://esm.sh/recharts@^3.6.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="overflow-hidden">
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
