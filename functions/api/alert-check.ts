@@ -1,5 +1,5 @@
 export async function onRequestGet(context: any) {
-  const { env, request } = context;
+  const { env } = context;
   
   const makeResponse = (data: any, status = 200) => {
     return new Response(JSON.stringify(data), {
@@ -13,36 +13,15 @@ export async function onRequestGet(context: any) {
   };
 
   try {
-    const url = new URL(request.url);
-    const testTo = url.searchParams.get('test_to'); 
     const RESEND_API_KEY = env.RESEND_API_KEY;
     const SENDER_EMAIL = env.RESEND_FROM_EMAIL || "Live Well <onboarding@resend.dev>";
     
     if (!RESEND_API_KEY) return makeResponse({ status: "error", message: "未配置 RESEND_API_KEY" }, 500);
-
-    // --- 1. 快捷测试模式 ---
-    if (testTo) {
-      const resendResponse = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${RESEND_API_KEY}` },
-        body: JSON.stringify({
-          from: SENDER_EMAIL,
-          to: [testTo],
-          subject: "【活着么】系统连通性测试",
-          text: `您的自定义域名发信系统 (${SENDER_EMAIL}) 工作正常！`,
-        }),
-      });
-      return makeResponse({ status: "success", result: await resendResponse.json() });
-    }
-
-    // --- 2. 正式巡检模式 (48小时协议) ---
     if (!env.DB) return makeResponse({ status: "error", message: "数据库未绑定" }, 500);
 
     const now = Date.now();
-    // 预警阈值：正式设置为 48 小时 (48 * 60 * 60 * 1000)
     const ALERT_THRESHOLD = 48 * 60 * 60 * 1000; 
 
-    // 查询所有超时且已注册的用户及其紧急联系人
     const { results } = await env.DB.prepare(`
       SELECT u.id, u.name as user_name, u.language, c.email as contact_email, u.last_check_in
       FROM users u
@@ -53,31 +32,68 @@ export async function onRequestGet(context: any) {
     `).bind(now - ALERT_THRESHOLD).all();
 
     if (!results || results.length === 0) {
-      return makeResponse({ status: "success", message: "巡检完毕：暂无风险用户", timestamp: now });
+      return makeResponse({ status: "success", message: "巡检完毕：暂无新增风险用户", timestamp: now });
     }
 
     const reports = [];
     for (const user of results) {
       const isEn = user.language === 'en';
       const userName = user.user_name || "用户";
-      const lastCheckInTime = new Date(user.last_check_in).toLocaleString();
+      const hoursMissed = (now - user.last_check_in) / (60 * 60 * 1000);
+      const daysMissed = Math.floor(hoursMissed / 24);
       
-      const subject = isEn 
-        ? `[URGENT] Safety Alert for ${userName}` 
-        : `【紧急预警】请核实${userName}的安全状态`;
-      
-      const body = isEn
-        ? `Hello, this is an automated safety report from the "Live Well" App.\n\nUser [${userName}] has missed their safety check-in for over 48 hours (Last check-in: ${lastCheckInTime}).\n\nPlease try to contact them immediately to ensure their safety.`
-        : `您好，这是来自“活着么”App的自动监测报告。\n\n用户 [${userName}] 已超过 48 小时未进行平安打卡（上次打卡时间: ${lastCheckInTime}）。\n\n请立即尝试通过电话、微信或实地走访联系该用户，以确保其人身安全。`;
+      let subject = "";
+      let textBody = "";
+
+      if (isEn) {
+        subject = `[Safety Alert] Please verify the safety of ${userName} immediately`;
+        textBody = `Dear Emergency Contact,\n\nYou are receiving this email because your emergency contact ${userName} (Live Well App) has missed daily safety check-ins for ${daysMissed} consecutive days.\n\nPlease contact them immediately to ensure their safety.\n\n— The Live Well Team`;
+      } else {
+        subject = `【安全预警】请立即确认${userName}的安全状态`;
+        textBody = `尊敬的紧急联系人：
+
+您好！
+
+您收到这封邮件，是因为您的紧急关联人 ${userName}（活着么App关联姓名）已连续 ${daysMissed} 天未在【活着么】App完成每日平安签到。
+
+为保障${userName}的人身安全，恳请您尽快通过以下方式尝试联系TA：
+
+1. 优先拨打${userName}的常用电话（若您留存相关信息）；
+
+2. 联系${userName}的同住亲友、邻居或同事协助核实；
+
+3. 若多次联系无果，且您判断存在安全风险，建议及时联系当地社区居委会、物业或报警处理。
+
+重要说明：
+
+1. 此邮件为系统自动触发，仅作为安全提醒，不代表${userName}已发生实际危险，也可能是TA忘记签到；
+
+2. 若您已确认${userName}安全，可提醒TA尽快登录App完成签到，避免后续重复预警；
+
+3. 如需调整紧急联系人信息或预警规则，可由${userName}登录【活着么】进行设置。
+
+感谢您的配合，愿每一位独居者都能平安顺遂。
+
+—— 【活着么】官方团队
+
+（此邮件为系统自动发送，无需回复）`;
+      }
 
       const sendRes = await fetch("https://api.resend.com/emails", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${RESEND_API_KEY}` },
-        body: JSON.stringify({ from: SENDER_EMAIL, to: [user.contact_email], subject, text: body }),
+        headers: { 
+          "Content-Type": "application/json", 
+          "Authorization": `Bearer ${RESEND_API_KEY}` 
+        },
+        body: JSON.stringify({ 
+          from: SENDER_EMAIL, 
+          to: [user.contact_email], 
+          subject, 
+          text: textBody 
+        }),
       });
 
       if (sendRes.ok) {
-        // 更新数据库，记录预警已发送，防止在下次打卡前重复发送
         await env.DB.prepare("UPDATE users SET last_alert_sent_at = ? WHERE id = ?")
           .bind(now, user.id).run();
       }
@@ -85,7 +101,11 @@ export async function onRequestGet(context: any) {
       reports.push({ user: userName, contact: user.contact_email, success: sendRes.ok });
     }
 
-    return makeResponse({ status: "success", message: `已处理 ${reports.length} 个预警`, details: reports });
+    return makeResponse({ 
+      status: "success", 
+      processed_count: reports.length,
+      details: reports 
+    });
 
   } catch (err: any) {
     return makeResponse({ status: "error", message: err.message }, 500);
