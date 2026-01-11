@@ -5,7 +5,7 @@ export async function onRequestGet(context: any) {
   const testUserId = url.searchParams.get('test_user');
   
   const now = Date.now();
-  const ALERT_THRESHOLD = 48 * 60 * 60 * 1000;
+  const ALERT_THRESHOLD = 2 * 60 * 1000;
   const RESEND_API_KEY = env.RESEND_API_KEY;
 
   if (!RESEND_API_KEY) {
@@ -40,7 +40,7 @@ export async function onRequestGet(context: any) {
       
       usersToAlert = results.map(u => ({
         ...u,
-        daysMissed: Math.floor((now - u.last_check_in) / (24 * 60 * 60 * 1000))
+        daysMissed: Math.floor((now - u.last_check_in) / (60 * 1000))
       }));
     }
 
