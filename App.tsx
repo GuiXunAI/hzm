@@ -8,7 +8,7 @@ const App: React.FC = () => {
     const saved = localStorage.getItem('live_well_v6_db');
     if (saved) {
       const parsed = JSON.parse(saved);
-      // 自动修复逻辑：如果 ID 还是旧的 'primary'，立即重置为唯一 ID
+      // 自动修复逻辑：确保 ID 唯一，避免冲突
       if (parsed.emergencyContacts && parsed.emergencyContacts[0] && parsed.emergencyContacts[0].id === 'primary') {
         parsed.emergencyContacts[0].id = 'c_' + Math.random().toString(36).substr(2, 9);
       }
@@ -56,7 +56,15 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      const result = await res.json();
+      
+      const text = await res.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (e) {
+        throw new Error(`同步接口返回了非 JSON 数据: ${text.substring(0, 100)}...`);
+      }
+
       if (!res.ok) throw new Error(result.error || 'Sync failed');
       
       setSyncStatus('success');
@@ -72,10 +80,20 @@ const App: React.FC = () => {
     setRawLogs("正在查询 D1 数据库中的当前记录...");
     try {
       const res = await fetch(`/api/alert-check?user_id=${state.userId}`);
-      const data = await res.json();
+      const text = await res.text();
+      
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        // 如果解析 JSON 失败，说明返回的是 HTML (通常是 404 或 500 错误页)
+        setRawLogs(`查询失败！接口返回了 HTML 页面而非数据。\n这通常意味着 API 路径不存在或云端代码崩溃了。\n\n响应开头：${text.substring(0, 200)}`);
+        return;
+      }
+
       setRawLogs("云端数据核对结果：\n" + JSON.stringify(data, null, 2));
     } catch (e: any) {
-      setRawLogs("查询失败: " + e.message);
+      setRawLogs("请求发生异常: " + e.message);
     }
   };
 
@@ -114,7 +132,6 @@ const App: React.FC = () => {
 
   if (!state.isRegistered) return <Onboarding onComplete={(lang, name, email) => {
     const initialUser = { name, email: '', phone: '' };
-    // 关键修复：使用随机 ID 避免全局冲突
     const contactId = 'c_' + Math.random().toString(36).substr(2, 9);
     const initialGuardians = [{ id: contactId, name: '', email, phone: '' }];
     const newState = { ...state, language: lang, userContact: initialUser, emergencyContacts: initialGuardians, isRegistered: true };
@@ -173,14 +190,14 @@ const App: React.FC = () => {
                    <div className="p-4 bg-white rounded-2xl border border-slate-200">
                       <div className="flex items-center justify-between mb-2 text-[10px] font-mono text-slate-400">
                          <span>UID: {state.userId}</span>
-                         <span className="text-[#00D658]">{syncStatus}</span>
+                         <span className="text-[#00D658] font-bold">{syncStatus.toUpperCase()}</span>
                       </div>
                       <pre className="text-[10px] bg-slate-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-56 whitespace-pre-wrap font-mono">
                         {rawLogs || '提示：同步成功后才能核对云端数据'}
                       </pre>
                    </div>
                    <button onClick={checkMyCloudData} className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black text-[13px] squishy">
-                     1. 核对云端数据 (Check Cloud)
+                     1. 核对云端数据并模拟预警 (Targeted Test)
                    </button>
                  </div>
                )}
