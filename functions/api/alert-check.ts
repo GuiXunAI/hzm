@@ -1,88 +1,67 @@
-export async function onRequestGet(context: any) {
-  const { env, request } = context;
-  const url = new URL(request.url);
-  // 获取指定的 user_id 参数
-  const targetUserId = url.searchParams.get('user_id');
-  
-  const now = Date.now();
-  const ALERT_THRESHOLD = 2 * 60 * 1000; // 2分钟失联阈值
-  const RESEND_API_KEY = env.RESEND_API_KEY;
-
-  if (!RESEND_API_KEY) {
-    return new Response(JSON.stringify({ status: "error", message: "未配置 RESEND_API_KEY" }), { status: 500, headers: { "Content-Type": "application/json" } });
-  }
+export async function onRequestPost(context: any) {
+  const { request, env } = context;
+  const data = await request.json();
 
   if (!env.DB) {
-    return new Response(JSON.stringify({ status: "error", message: "数据库未绑定" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "Database not bound" }), { status: 500 });
   }
 
   try {
-    let usersToAlert = [];
+    // 1. 同步用户基础信息
+    await env.DB.prepare(`
+      INSERT INTO users (id, name, email, last_check_in, streak, language, is_registered)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+      name=excluded.name, email=excluded.email, last_check_in=excluded.last_check_in, 
+      streak=excluded.streak, language=excluded.language, is_registered=excluded.is_registered,
+      updated_at=CURRENT_TIMESTAMP
+    `).bind(
+      data.userId, 
+      data.userContact.name, 
+      data.userContact.email, 
+      data.lastCheckIn, 
+      data.streak,
+      data.language,
+      data.isRegistered ? 1 : 0
+    ).run();
 
-    if (targetUserId) {
-      // 模式 A: 仅针对当前指定用户进行安全检查（无论是否失联，方便测试）
-      const { results } = await env.DB.prepare(`
-        SELECT u.id as user_id, u.name as user_name, u.language, c.email as contact_email, u.last_check_in
-        FROM users u
-        LEFT JOIN contacts c ON u.id = c.user_id
-        WHERE u.id = ?
-      `).bind(targetUserId).all();
-      usersToAlert = results || [];
-    } else {
-      // 模式 B: 巡检全库中失联的用户
-      const { results } = await env.DB.prepare(`
-        SELECT u.id as user_id, u.name as user_name, u.last_check_in, u.language, c.email as contact_email
-        FROM users u
-        JOIN contacts c ON u.id = c.user_id
-        WHERE u.is_registered = 1 AND u.last_check_in < ?
-        ORDER BY u.last_check_in DESC LIMIT 5
-      `).bind(now - ALERT_THRESHOLD).all();
-      usersToAlert = results || [];
+    // 2. 同步最新的签到历史
+    if (data.checkInHistory && data.checkInHistory.length > 0) {
+      const lastItem = data.checkInHistory[data.checkInHistory.length - 1];
+      await env.DB.prepare(`
+        INSERT INTO check_ins (user_id, timestamp, date_string, time_string)
+        SELECT ?, ?, ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM check_ins WHERE user_id = ? AND date_string = ?)
+      `).bind(
+        data.userId,
+        lastItem.timestamp,
+        lastItem.dateString,
+        lastItem.timeString,
+        data.userId,
+        lastItem.dateString
+      ).run();
     }
 
-    const report = [];
-
-    for (const user of usersToAlert) {
-      if (!user.contact_email) {
-        report.push({ user_id: user.user_id, success: false, message: "该用户未配置紧急联系人邮箱" });
-        continue;
+    // 3. 同步联系人 (核心修复：使用 OR REPLACE 强制写入，防止 ID 碰撞)
+    // 首先删除该用户的所有旧联系人
+    await env.DB.prepare("DELETE FROM contacts WHERE user_id = ?").bind(data.userId).run();
+    
+    // 然后重新插入
+    for (const c of data.emergencyContacts) {
+      if (c.email) {
+        // 使用 INSERT OR REPLACE 确保即使 ID 存在冲突也能强制覆盖
+        await env.DB.prepare("INSERT OR REPLACE INTO contacts (id, user_id, name, email, phone) VALUES (?, ?, ?, ?, ?)")
+          .bind(c.id, data.userId, c.name, c.email, c.phone).run();
       }
-
-      const isEn = user.language === 'en';
-      const subject = isEn ? `[Safety Test] ${user.user_name}` : `【安全测试】请确认${user.user_name}的状态`;
-      const textBody = `这不仅是一次测试。用户 ID: ${user.user_id} 当前在云端数据库中绑定的邮箱是: ${user.contact_email}`;
-
-      const resendResponse = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${RESEND_API_KEY}`,
-        },
-        body: JSON.stringify({
-          from: "Live Well <onboarding@resend.dev>",
-          to: [user.contact_email],
-          subject: subject,
-          text: textBody,
-        }),
-      });
-
-      const resendData: any = await resendResponse.json();
-      report.push({
-        user_id: user.user_id,
-        user_name: user.user_name,
-        cloud_email: user.contact_email, // 显式展示数据库里的邮箱
-        success: resendResponse.ok,
-        debug: resendData
-      });
     }
 
-    return new Response(JSON.stringify({ 
-      status: "success", 
-      mode: targetUserId ? "Targeted" : "Scan",
-      report 
-    }), { headers: { "Content-Type": "application/json" } });
-
+    return new Response(JSON.stringify({ success: true, userId: data.userId }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
   } catch (err: any) {
-    return new Response(JSON.stringify({ status: "error", message: err.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: err.message }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
