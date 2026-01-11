@@ -20,9 +20,10 @@ const App: React.FC = () => {
   });
 
   const [activeTab, setActiveTab] = useState<'home' | 'history' | 'settings'>('home');
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [tick, setTick] = useState(0); 
-  const [apiLogs, setApiLogs] = useState<string>('等待触发...');
+  const [apiLogs, setApiLogs] = useState<any>({});
+  const [rawLogs, setRawLogs] = useState<string>('');
   const [showDevTools, setShowDevTools] = useState(false);
 
   const [editUser, setEditUser] = useState<UserContact>(state.userContact);
@@ -31,7 +32,6 @@ const App: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const t = TRANSLATIONS[state.language || 'zh'];
 
-  // 每秒更新
   useEffect(() => {
     const timer = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(timer);
@@ -39,70 +39,62 @@ const App: React.FC = () => {
 
   useEffect(() => {
     localStorage.setItem('live_well_v6_db', JSON.stringify(state));
-    if (state.isRegistered) syncToCloud(state);
   }, [state]);
 
   const syncToCloud = async (data: AppState) => {
+    setSyncStatus('syncing');
     try {
-      setIsSyncing(true);
       const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error('Sync failed');
+      setSyncStatus('success');
+      setTimeout(() => setSyncStatus('idle'), 3000);
     } catch (e) {
-      console.error("Cloud sync paused");
-    } finally {
-      setIsSyncing(false);
+      setSyncStatus('error');
+      console.error("Cloud sync error", e);
     }
   };
 
   const manualTriggerCheck = async () => {
-    setApiLogs("正在请求预警接口...");
+    setRawLogs("正在请求预警接口...");
     try {
       const res = await fetch('/api/alert-check');
-      const text = await res.text();
-      try {
-        const json = JSON.parse(text);
-        setApiLogs(JSON.stringify(json, null, 2));
-      } catch {
-        setApiLogs("错误：接口返回的不是 JSON。请检查 functions 目录是否部署正确。\n\n返回内容：\n" + text.substring(0, 200));
-      }
+      const data = await res.json();
+      setApiLogs(data);
+      setRawLogs(JSON.stringify(data, null, 2));
     } catch (e: any) {
-      setApiLogs("网络请求失败: " + e.message);
+      setRawLogs("请求失败: " + e.message);
     }
   };
 
   const handleCheckIn = (e: React.MouseEvent) => {
     const now = new Date();
     const todayStr = now.toLocaleDateString();
-    
-    setState(prev => {
-      const ts = now.getTime();
-      return {
-        ...prev,
-        lastCheckIn: ts,
-        streak: prev.streak + 1,
-        checkInHistory: [...prev.checkInHistory, { 
-          timestamp: ts, 
-          dateString: todayStr, 
-          timeString: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) 
-        }].slice(-365),
-      };
-    });
+    const newState = {
+      ...state,
+      lastCheckIn: now.getTime(),
+      streak: state.streak + 1,
+      checkInHistory: [...state.checkInHistory, { 
+        timestamp: now.getTime(), 
+        dateString: todayStr, 
+        timeString: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) 
+      }].slice(-365),
+    };
+    setState(newState);
+    syncToCloud(newState);
   };
 
   const saveSettings = async () => {
     const newState = { ...state, userContact: editUser, emergencyContacts: editGuardians };
     setState(newState);
     await syncToCloud(newState);
-    alert('信息已保存');
   };
 
   const hasCheckedInToday = useMemo(() => {
     if (!state.lastCheckIn) return false;
-    // 测试模式：60秒有效期
     return (Date.now() - state.lastCheckIn) < 60 * 1000;
   }, [state.lastCheckIn, tick]);
 
@@ -115,8 +107,10 @@ const App: React.FC = () => {
   if (!state.isRegistered) return <Onboarding onComplete={(lang, name, email) => {
     const initialUser = { name, email: '', phone: '' };
     const initialGuardians = [{ id: 'primary', name: '', email, phone: '' }];
-    setState(p => ({ ...p, language: lang, userContact: initialUser, emergencyContacts: initialGuardians, isRegistered: true }));
+    const newState = { ...state, language: lang, userContact: initialUser, emergencyContacts: initialGuardians, isRegistered: true };
+    setState(newState);
     setEditUser(initialUser); setEditGuardians(initialGuardians);
+    syncToCloud(newState);
   }} />;
 
   return (
@@ -125,7 +119,9 @@ const App: React.FC = () => {
         <div className="flex items-center justify-between mb-8">
            <div>
               <h1 className="brand-logo-text text-[32px]">{t.title}</h1>
-              <p className="text-[10px] font-black text-[#00D658] uppercase tracking-widest">Dev Test Mode</p>
+              <p className="text-[10px] font-black text-[#00D658] uppercase tracking-widest">
+                {syncStatus === 'syncing' ? '同步中...' : syncStatus === 'success' ? '同步成功' : 'Dev Test Mode'}
+              </p>
            </div>
            <nav className="flex bg-[#F8F9FA] p-1.5 rounded-full">
               <button onClick={() => setActiveTab('home')} className={`p-3 rounded-full transition-all ${activeTab === 'home' ? 'bg-[#00D658] text-white shadow-lg' : 'text-slate-300'}`}>
@@ -168,16 +164,27 @@ const App: React.FC = () => {
                </div>
                {showDevTools && (
                  <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
-                   <div className="p-3 bg-white rounded-xl border border-slate-200">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase mb-2">API 实时日志</p>
-                      <pre className="text-[10px] bg-slate-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-40 whitespace-pre-wrap">
-                        {apiLogs}
+                   <div className="p-4 bg-white rounded-2xl border border-slate-200">
+                      <div className="flex items-center justify-between mb-2 text-[10px] font-mono text-slate-400">
+                         <span>CURRENT ID: {state.userId}</span>
+                      </div>
+                      
+                      {apiLogs.report && apiLogs.report.some((r: any) => r.user_id !== state.userId) && (
+                        <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+                          <p className="text-[11px] font-bold text-amber-600 mb-1">提示：检测到旧账号数据</p>
+                          <p className="text-[10px] text-amber-500 leading-tight">
+                            下方日志显示的 <b>{apiLogs.report.find((r:any)=>r.user_id !== state.userId)?.user_name}</b> 可能是您之前的旧账号记录。请点击“设置-保存”强制同步当前账号。
+                          </p>
+                        </div>
+                      )}
+
+                      <pre className="text-[10px] bg-slate-900 text-green-400 p-3 rounded-lg overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">
+                        {rawLogs || '点击下方按钮触发 API'}
                       </pre>
                    </div>
-                   <button onClick={manualTriggerCheck} className="w-full py-3 bg-slate-800 text-white rounded-xl font-black text-[13px] squishy">
+                   <button onClick={manualTriggerCheck} className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black text-[14px] squishy">
                      立即模拟后端巡检 (Trigger API)
                    </button>
-                   <p className="text-[10px] text-slate-400 text-center">注意：请在倒计时归零后点击上方按钮触发发信。</p>
                  </div>
                )}
             </div>
@@ -188,6 +195,7 @@ const App: React.FC = () => {
           <div className="flex flex-col gap-6">
             <h3 className="text-[18px] font-black text-[#00D658]">守护设置</h3>
             <div className="premium-card p-6 space-y-4">
+               <div className="text-[10px] font-mono text-slate-300 mb-2">ID: {state.userId}</div>
                <div>
                  <label className="text-[11px] font-bold text-slate-400 uppercase">您的姓名</label>
                  <input value={editUser.name} onChange={e=>setEditUser({...editUser, name:e.target.value})} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-[#00D658]/20 transition-all font-bold" />
@@ -197,7 +205,10 @@ const App: React.FC = () => {
                  <input value={editGuardians[0]?.email} onChange={e=>{const n=[...editGuardians]; n[0].email=e.target.value; setEditGuardians(n);}} className="w-full mt-1 p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-[#00D658]/20 transition-all font-bold" />
                </div>
             </div>
-            <button onClick={saveSettings} className="w-full py-5 rounded-[32px] bg-[#00D658] text-white font-black shadow-xl shadow-[#00D658]/20 squishy">保存并上传同步</button>
+            <button onClick={saveSettings} className={`w-full py-5 rounded-[32px] text-white font-black shadow-xl squishy transition-all ${syncStatus === 'syncing' ? 'bg-slate-400' : 'bg-[#00D658] shadow-[#00D658]/20'}`}>
+              {syncStatus === 'syncing' ? '正在同步云端...' : '保存并强制同步'}
+            </button>
+            {syncStatus === 'success' && <p className="text-center text-[12px] text-[#00D658] font-bold">已同步至 D1 数据库</p>}
           </div>
         )}
       </main>
